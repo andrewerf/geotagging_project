@@ -1,4 +1,4 @@
-from math import cos
+from math import cos, fabs
 
 def convert_accuracy(pos, acc_m):
 	acc_m = acc_m/100
@@ -11,7 +11,7 @@ def convert_accuracy(pos, acc_m):
 class Area:
 	def __init__(self, pos, accuracy_m = 200):
 		self.pos = pos
-		self.delta = convert_accuracy(pos, accuracy_m)
+		self.delta = list(map(fabs, convert_accuracy(pos, accuracy_m)))
 
 	def __contains__(self, pos):
 		ok = True
@@ -25,4 +25,4 @@ class Area:
 		pass
 
 	def __str__(self):
-		return str(self.pos) + ' ' + str(self.delta)
+		return str(self.pos) + ',' + str(self.delta)

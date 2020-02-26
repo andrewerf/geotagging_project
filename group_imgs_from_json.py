@@ -1,9 +1,9 @@
 import json
 import argparse
+from tqdm import tqdm
 
-from geotagging_project.utils import Area, convert_accuracy
+from utils import Area
 
-accuracy = 10000
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--in', type=str, dest='fin')
@@ -26,11 +26,11 @@ def group():
     data = json_parse()
     pos = []
     for p in data:
-        area = Area((p[1], p[2]), accuracy)
+        area = Area((p[1], p[2]))
         pos.append(area)
     areas = []
     i = 0
-    for p in pos:
+    for p in tqdm(pos):
         if len(areas) == 0:
             areas.append([])
             areas[-1].append(p.pos)
@@ -50,7 +50,7 @@ def group():
                 areas[-1].append([])
                 areas[-1][-1].append(data[i][0])
         i += 1
-        print(i)
+
     with open(args.fout, "w") as fp:
         json.dump(areas, fp)
 

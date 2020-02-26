@@ -15,12 +15,20 @@ class BaseModel(Model):
 	class Meta:
 		database = db_handler
 
+class Sight(BaseModel):
+	id = PrimaryKeyField(null=False)
+	area = CharField(max_length=30)
+	type_id = IntegerField()
+	db_table = "sights"
+
+	class Meta:
+		db_table = "sights"
 
 class Descriptor(BaseModel):
 	id = PrimaryKeyField(null=False)
-	image_id = IntegerField(null=False)
+	image_id = CharField(max_length=30, unique=True)
 	descriptor = CharField(max_length=40000)
-	sight_id = IntegerField()
+	sight_id = ForeignKeyField(Sight, backref='descrs')
 	db_table = "descriptors"
 
 	class Meta:
