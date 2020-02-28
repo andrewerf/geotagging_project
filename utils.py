@@ -9,7 +9,7 @@ def convert_accuracy(pos, acc_m):
 	return (lat_deg, long_deg)
 
 class Area:
-	def __init__(self, pos, accuracy_m = 200):
+	def __init__(self, pos, accuracy_m = 50):
 		self.pos = pos
 		self.delta = list(map(fabs, convert_accuracy(pos, accuracy_m)))
 

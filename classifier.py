@@ -1,5 +1,5 @@
-# import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 from keras import layers
@@ -7,21 +7,26 @@ from keras import models
 import argparse
 from keras.preprocessing import image
 from keras.utils import to_categorical
-from geotagging_project.mobilenetv1_encoder import Encoder
-from geotagging_project.sql_models import db_handler, Sight, Descriptor
+from mobilenetv1_encoder import Encoder
+from sql_models import db_handler, Sight, Descriptor
 import csv
+import json
 from tqdm import tqdm
 
 import numpy as np
+from matplotlib import pyplot as plt
 
-classes = 70
+classes = 15
 
 
 class Classifier:
 	def __init__(self, cnt_classes, input_shape):
 		self.model = models.Sequential()
 		self.model.add(layers.Reshape((1, 1, input_shape[0]), input_shape=input_shape))
-		self.model.add(layers.Dropout(rate=1e-3))
+		self.model.add(layers.Dropout(rate=0.25))
+		self.model.add(layers.Conv2D(cnt_classes, (1, 1), padding='same'))
+		self.model.add(layers.Activation('relu'))
+		self.model.add(layers.Dropout(rate=0.25))
 		self.model.add(layers.Conv2D(cnt_classes, (1, 1), padding='same'))
 		self.model.add(layers.Activation('softmax'))
 		self.model.add(layers.Reshape((cnt_classes,)))
@@ -31,15 +36,27 @@ class Classifier:
 		return self.model.predict(desc)
 
 	def fit(self, x, y):
-		x_test = x[:1000]
-		x_train = x[1000:]
-		y_test = y[:1000]
-		y_train = y[1000:]
+		x_test = x[:300]
+		x_train = x[300:]
+		y_test = y[:300]
+		y_train = y[300:]
+		print(x_train.shape)
 
-		y_train = to_categorical(y_train)
-		y_test = to_categorical(y_test)
+		y_train = to_categorical(y_train, classes)
+		y_test = to_categorical(y_test, classes)
+		print(y_train.shape)
+		print(y_test.shape)
 
-		self.model.fit(x_train, y_train, batch_size=10, epochs=200, validation_data=(x_test, y_test), shuffle=True)
+		return self.model.fit(x_train, y_train, batch_size=10, epochs=500, validation_data=(x_test, y_test), shuffle=True)
+
+	def plot(self, history):
+		plt.plot(history.history['acc'])
+		plt.plot(history.history['val_acc'])
+		plt.title('Model accuracy')
+		plt.ylabel('Accuracy')
+		plt.xlabel('Epoch')
+		plt.legend(['Train', 'Test'], loc='upper left')
+		plt.show()
 
 
 def read_csv(fname, sights: dict):
@@ -96,13 +113,15 @@ def test(img_path):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--csv', type=str, dest='fin')
+	parser.add_argument('--history', type=str, dest='hist_file')
 	args = parser.parse_args()
 
 	sights = {}
+	start_id = Sight.select(Sight.id).limit(1).execute()[0].id
 	query = Descriptor.select(Descriptor.image_id, Descriptor.sight_id).tuples()
 	for row in tqdm(query):
-		if row[1] < classes:
-			sights[int(row[0])] = row[1]
+		if row[1] < start_id + classes:
+			sights[int(row[0])] = row[1] - start_id
 
 	if args.fin:
 		x, y = read_csv(args.fin, sights)
@@ -110,4 +129,8 @@ if __name__ == '__main__':
 		x, y = read_sql()
 
 	model = Classifier(classes, (1024,))
-	model.fit(x, y)
+	history = model.fit(x, y)
+	model.plot(history)
+
+	with open(args.hist_file, 'w') as f:
+		f.write(json.dumps(history.history))
