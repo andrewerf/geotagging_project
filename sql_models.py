@@ -34,3 +34,12 @@ class Descriptor(BaseModel):
 	class Meta:
 		db_table = "descriptors"
 
+class Streets(BaseModel):
+	id = PrimaryKeyField(null=False)
+	pos = CharField(max_length=40, unique=True)
+	house_number = CharField(max_length=50)
+	street = CharField(max_length=15000)
+	city = CharField(max_length=50)
+	class Meta:
+		db_table = "streets"
+
