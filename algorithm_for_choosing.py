@@ -1,18 +1,8 @@
 import numpy as np
-import argparse
 import json
-from geotagging_project.test_veiw import show_images, show_image
-from geotagging_project.sql_models import *
-from geotagging_project.mobilenetv1_encoder import Encoder, load_img
-from geotagging_project.classifier import Classifier, classes_count
+from sql_models import *
 from tqdm import tqdm
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--in', type=str, dest='fin')
-parser.add_argument('--out', type=str, dest='fout')
-parser.add_argument('--metadata', type=str, dest='metadata')
-parser.add_argument('--classes', type=str, dest='fclasses')
-args = parser.parse_args()
+from sklearn.cluster import OPTICS, MeanShift, KMeans
 
 
 def convert_str_desc(s):
@@ -54,6 +44,37 @@ def get_sq_of_euclid_dist(descr1, descr2):
 	return dist
 
 
+def split_by_labels(data, labels):
+	count = int(np.max(labels))
+	result = [[] for i in range(count+1)]
+	for i, x in enumerate(data):
+		result[int(labels[i])].append(x)
+	return result
+
+
+def unite_by_labels(data):
+	labels = []
+	result = []
+	for i, cluster in enumerate(data):
+		for x in cluster:
+			labels.append(i)
+			result.append(x)
+
+	return result, labels
+
+
+def score_clustering(x, labels, proccess_Din = np.max):
+	clusters = split_by_labels(x, labels)
+	Din = []
+	avgs = []
+	for cluster in clusters:
+		avgs.append(np.average(cluster))
+		Din.append(np.var(cluster))
+
+	Dout = np.var(avgs)
+	return proccess_Din(Din) / Dout
+
+
 def get_nearest_descr_from_all(limit, cur_descr, dist_metric):
 	if limit == -1:
 		descrs = Descriptor.select()
@@ -83,7 +104,7 @@ def get_nearest_descr_from_all(limit, cur_descr, dist_metric):
 
 
 def get_unic_sigth_id(limits):
-	sights_req = Descriptor.select().group_by(Descriptor.sight_id).having(fn.COUNT(Descriptor.id) == 1).limit(limits)
+	sights_req = Sight.select(Sight.id).limit(limits)
 	sights = []
 	for row in sights_req:
 		sights.append(convert_str_sight(row.sight_id))
@@ -100,7 +121,7 @@ def get_all_descr_from_sight(sight_id):
 	return (descrs, imgs_id)
 
 
-def get_similar_pos(data):
+def get_similar_pos(data, metadata):
 	sim_descrs = data[0]
 	dist = data[1]
 	imgs_id = data[2]
@@ -120,8 +141,7 @@ def get_similar_pos(data):
 		if get_manhattan_dist(sim_descrs[i], avg_vec) < tdist:
 			tdist = get_manhattan_dist(sim_descrs[i], avg_vec)
 			img_id = imgs_id[i]
-	show_images(str(img_id), '/media/qunity/Workspace/Python_projects/NeuralNetworks/Images')
-	with open(args.metadata, "r") as read_file:
+	with open(metadata, "r") as read_file:
 		mdata = json.load(read_file)
 	for i in range(len(mdata)):
 		if int(mdata[i]['id']) == img_id:
@@ -159,8 +179,8 @@ def get_similar_descrs(sigth_id, c_desc, n):
 	return (sim_descr, dist, imgs_id)
 
 
-def get_similar_sight_id(descr):
-	with open(args.fin, "r") as read_file:
+def get_similar_sight_id(descr, avgs_file):
+	with open(avgs_file, "r") as read_file:
 		avg_val_of_vecs = json.load(read_file)
 	t_sight_id = next(iter(avg_val_of_vecs))
 	dist = get_manhattan_dist(avg_val_of_vecs[t_sight_id][0], descr)
@@ -171,7 +191,7 @@ def get_similar_sight_id(descr):
 	return t_sight_id
 
 
-def get_avg_val_of_descrs(limits):
+def get_avg_val_of_descrs(limits, fout):
 	if limits == -1:
 		descrs_req = Descriptor.select()
 	else:
@@ -187,25 +207,17 @@ def get_avg_val_of_descrs(limits):
 			avg_desc = avg_val_of_vec(base_table[sight_id][0], desc)
 			base_table[sight_id].pop(0)
 			base_table[sight_id].append(avg_desc)
-	with open(args.fout, "w") as fp:
+	with open(fout, "w") as fp:
 		json.dump(base_table, fp)
 
 
-def main():
-	img_path = 'imgs/florence3.jpg'
-	img = load_img(img_path)
-	descr = Encoder().get_descriptor(img)
+def sight_cluster(x, algo):
+	clust = None
+	if algo == 'optics':
+		clust = OPTICS(metric='manhattan', n_jobs=-1, min_cluster_size=50)
+	if algo == 'meanshift':
+		clust = MeanShift(cluster_all=True, n_jobs=-1)
+	if algo == 'kmeans':
+		clust = KMeans(n_clusters=5, n_jobs=-1)
 
-	Class_model = Classifier(classes_count, descr.shape, weights_file='stuff/weights.h5')
-
-	pred = np.argmax(Class_model.predict(descr))
-	accuacy = Class_model.predict(descr)
-	with open(args.fclasses, "r") as read_file:
-		classes = json.load(read_file)
-	sight_id = classes[pred]
-	show_image(img_path)
-	print(get_similar_pos(get_similar_descrs(sight_id, descr, 3)))
-
-
-if __name__ == '__main__':
-	main()
+	return clust.fit_predict(x)

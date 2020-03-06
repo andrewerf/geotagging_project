@@ -10,6 +10,8 @@ from sklearn.model_selection import KFold
 
 from mobilenetv1_encoder import Encoder, load_img
 from sql_models import db_handler, Sight, Descriptor
+from algorithm_for_choosing import split_by_labels, unite_by_labels, sight_cluster, score_clustering
+from utils import plot_history
 import peewee
 import csv
 import json
@@ -17,7 +19,6 @@ from tqdm import tqdm
 import argparse
 
 import numpy as np
-from matplotlib import pyplot as plt
 
 
 classes_count = 20
@@ -35,6 +36,7 @@ class Classifier:
 		self.model.add(layers.Activation('softmax'))
 		self.model.add(layers.Reshape((cnt_classes,)))
 
+		self.cnt_classes = cnt_classes
 		if weights_file:
 			self.model.load_weights(weights_file)
 
@@ -47,21 +49,12 @@ class Classifier:
 		return self.model.predict(desc)
 
 	def fit(self, x, y):
-		y = to_categorical(y, classes_count)
+		y = to_categorical(y, self.cnt_classes)
 		for train_index, test_index in KFold(15, True).split(x):
 			x_train, x_test = x[train_index], x[test_index]
 			y_train, y_test = y[train_index], y[test_index]
 
 			return self.model.fit(x_train, y_train, batch_size=100, epochs=200, validation_data=(x_test, y_test), shuffle=True)
-
-	def plot(self, history):
-		plt.plot(history.history['acc'])
-		plt.plot(history.history['val_acc'])
-		plt.title('Model accuracy')
-		plt.ylabel('Accuracy')
-		plt.xlabel('Epoch')
-		plt.legend(['Train', 'Test'], loc='upper left')
-		plt.show()
 
 
 def get_ktop_areas(k):
@@ -107,6 +100,40 @@ def read_csv(fname, sights: dict):
 	return (x_train, y_train)
 
 
+def areas_cluster(x, y, classes):
+	areas = split_by_labels(x, y)
+	extra_classes = []
+	extra_areas = []
+
+	for i, area in enumerate(areas):
+		labels = sight_cluster(area, 'kmeans')
+
+		count = np.max(labels)+1
+		print(f'{count} clusters on {classes[i]}')
+		score = np.inf
+
+		counts = np.unique(labels, return_counts=True)[1]
+		median = np.median(counts)
+		min = np.min(counts)
+		if count > 1:
+			score = score_clustering(area, labels)
+			print('Score:', score, 'median:', median, 'min:', min)
+
+		if (median > 200) and (score < 200):
+			t = split_by_labels(area, labels)
+			extra_classes += [classes[i]] * (count-1)
+			extra_areas += t[1:]
+			areas[i] = t[0]
+
+	areas += extra_areas
+	x, y = unite_by_labels(areas)
+	x = np.array(x)
+	y = np.array(y)
+
+	print('Added', len(extra_classes))
+	return x, y, classes+extra_classes
+
+
 def read_sql():
 	return (0, 0)
 
@@ -144,7 +171,9 @@ if __name__ == '__main__':
 	else:
 		x, y = read_sql()
 
-	model = Classifier(classes_count, x.shape[1:])
+	#x, y, classes = areas_cluster(x, y, classes)
+
+	model = Classifier(len(classes), x.shape[1:])
 	history = model.fit(x, y)
 
 	with open(args.hist_file, 'w') as f:
@@ -152,4 +181,4 @@ if __name__ == '__main__':
 	with open(args.classes_file, 'w') as f:
 		f.write(json.dumps(classes))
 	model.model.save_weights(args.weights_file)
-	model.plot(history)
+	plot_history(history.history)
