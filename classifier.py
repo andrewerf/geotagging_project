@@ -28,10 +28,10 @@ class Classifier:
 	def __init__(self, cnt_classes, input_shape, weights_file=None):
 		self.model = models.Sequential()
 		self.model.add(layers.Reshape((1, 1, input_shape[0]), input_shape=input_shape))
-		self.model.add(layers.Dropout(rate=0.05))
+		self.model.add(layers.Dropout(rate=0.07))
 		self.model.add(layers.Conv2D(cnt_classes, (1, 1), padding='same'))
 		self.model.add(layers.Activation('relu'))
-		self.model.add(layers.Dropout(rate=0.05))
+		self.model.add(layers.Dropout(rate=0.07))
 		self.model.add(layers.Conv2D(cnt_classes, (1, 1), padding='same'))
 		self.model.add(layers.Activation('softmax'))
 		self.model.add(layers.Reshape((cnt_classes,)))
@@ -54,7 +54,7 @@ class Classifier:
 			x_train, x_test = x[train_index], x[test_index]
 			y_train, y_test = y[train_index], y[test_index]
 
-			return self.model.fit(x_train, y_train, batch_size=100, epochs=200, validation_data=(x_test, y_test), shuffle=True)
+			return self.model.fit(x_train, y_train, batch_size=100, epochs=150, validation_data=(x_test, y_test), shuffle=True)
 
 
 def get_ktop_areas(k):
@@ -72,29 +72,37 @@ def get_ktop_areas(k):
 	return ret
 
 
-def read_csv(fname, sights: dict):
+def read_csv(fname, sights: dict, nas = False, count = None):
 	csvfile = open(fname, newline='')
 	reader = csv.reader(csvfile)
 
-	count = sum([1 if (int(row[0]) in sights) else 0 for row in reader])
+	if not count:
+		count = sum([1 if (int(row[0]) in sights) else 0 for row in reader])
 	x_train = np.zeros((count, 1024))
 	y_train = np.zeros((count,))
 
 	progress = tqdm(total=count)
 	csvfile.seek(0)
 	i = 0
+	nas_index = max(sights.values()) + 1
 	for row in reader:
 		image_id = int(row[0])
-		if not (image_id in sights):
-			continue
-
 		descr = row[1:]
 
-		x_train[i] = np.asarray(descr)
-		y_train[i] = sights[image_id]
-		i += 1
-
-		progress.update(1)
+		if nas:
+			if (not (image_id in sights)) and i < count:
+				x_train[i] = np.asarray(descr)
+				y_train[i] = nas_index
+				i += 1
+				progress.update(1)
+			if i == count:
+				break
+		else:
+			if image_id in sights:
+				x_train[i] = np.asarray(descr)
+				y_train[i] = sights[image_id]
+				i += 1
+				progress.update(1)
 
 	progress.close()
 	return (x_train, y_train)
@@ -167,11 +175,15 @@ if __name__ == '__main__':
 			sights[int(row[0])] = classes.index(row[1])
 
 	if args.fin:
-		x, y = read_csv(args.fin, sights)
+		x, y = read_csv(args.fin, sights, False)
+		x_nas, y_nas = read_csv(args.fin, sights, True, x.shape[0])
 	else:
 		x, y = read_sql()
 
-	#x, y, classes = areas_cluster(x, y, classes)
+	x, y, classes = areas_cluster(x, y, classes)
+	x = np.append(x, x_nas, axis=0)
+	y = np.append(y, y_nas, axis=0)
+	classes.append(-1)
 
 	model = Classifier(len(classes), x.shape[1:])
 	history = model.fit(x, y)
