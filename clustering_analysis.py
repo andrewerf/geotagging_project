@@ -4,8 +4,9 @@ import csv
 from geotagging_project.kmedoids import *
 from sklearn.metrics.pairwise import pairwise_distances
 from geotagging_project.sql_models import *
+from tqdm import  tqdm
 
-number_of_classes = 5000
+number_of_classes = 50
 
 
 def convert_str_desc(s):
@@ -21,7 +22,20 @@ def convert_str_desc(s):
     return desc
 
 
-def get_base_of_decrs():
+def get_base_of_descrs_from_csv(fin, limit=-1):
+    descrs = []
+    with open(fin) as file:
+        reader = csv.reader(file)
+        j = 0
+        for row in reader:
+            descrs.append(list(map(lambda x: float(x), row)))
+            if j == limit:
+                break
+            j += 1
+    return descrs
+
+
+def get_base_of_descrs_from_db():
     descrs = Descriptor.select()
     descrs_data = []
     for descr in descrs:
@@ -41,22 +55,23 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=str, dest='fout')
+    parser.add_argument('--in', type=str, dest='fin')
 
     args = parser.parse_args()
 
-    data = np.array(get_base_of_decrs())
+    data = np.array(get_base_of_descrs_from_csv(args.fin, limit=100))
 
     D = pairwise_distances(data, metric='manhattan')
 
     M, C = kMedoids(D, number_of_classes)
 
-    print('')
-    print('clustering result:')
+    # print('')
+    # print('clustering result:')
     avg_desc_data = []
-    for label in C:
+    for label in tqdm(C):
         avg_desc = data[C[label][0]]
         for point_idx in C[label]:
-            print('Label [{0}]:\t\t{1}'.format(label, data[point_idx]))
+            # print('Label [{0}]:\t\t{1}'.format(label, data[point_idx]))
             avg_desc = avg_val_of_vec(avg_desc, data[point_idx])
         avg_desc_data.append(avg_desc)
 
