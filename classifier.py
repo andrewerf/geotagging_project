@@ -25,7 +25,7 @@ classes_count = 20
 
 
 class Classifier:
-	def __init__(self, cnt_classes, input_shape, weights_file=None):
+	def __init__(self, cnt_classes, input_shape, loss, weights_file=None):
 		self.model = models.Sequential()
 		self.model.add(layers.Reshape((1, 1, input_shape[0]), input_shape=input_shape))
 		self.model.add(layers.Dropout(rate=0.07))
@@ -40,7 +40,7 @@ class Classifier:
 		if weights_file:
 			self.model.load_weights(weights_file)
 
-		self.model.compile(optimizer='sgd', loss='categorical_crossentropy', metrics=['accuracy'])
+		self.model.compile(optimizer='sgd', loss=loss, metrics=['accuracy'])
 
 	def predict(self, desc):
 		if len(desc.shape) == 1:
@@ -48,9 +48,9 @@ class Classifier:
 
 		return self.model.predict(desc)
 
-	def fit(self, x, y):
+	def fit(self, x, y, kfold=10):
 		y = to_categorical(y, self.cnt_classes)
-		for train_index, test_index in KFold(15, True).split(x):
+		for train_index, test_index in KFold(kfold, True).split(x):
 			x_train, x_test = x[train_index], x[test_index]
 			y_train, y_test = y[train_index], y[test_index]
 
@@ -95,14 +95,14 @@ def read_csv(fname, sights: dict, nas = False, count = None):
 				y_train[i] = nas_index
 				i += 1
 				progress.update(1)
-			if i == count:
-				break
 		else:
 			if image_id in sights:
 				x_train[i] = np.asarray(descr)
 				y_train[i] = sights[image_id]
 				i += 1
 				progress.update(1)
+		if i == count:
+			break
 
 	progress.close()
 	return (x_train, y_train)
@@ -185,7 +185,7 @@ if __name__ == '__main__':
 	y = np.append(y, y_nas, axis=0)
 	classes.append(-1)
 
-	model = Classifier(len(classes), x.shape[1:])
+	model = Classifier(len(classes), x.shape[1:], 'categorical_crossentropy')
 	history = model.fit(x, y)
 
 	with open(args.hist_file, 'w') as f:
