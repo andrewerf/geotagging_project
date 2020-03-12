@@ -1,10 +1,11 @@
 import numpy as np
-import argparse
 import csv
-from geotagging_project.kmedoids import *
-from sklearn.metrics.pairwise import pairwise_distances
-from geotagging_project.sql_models import *
-from tqdm import  tqdm
+import argparse
+import json
+from tqdm import tqdm
+from geotagging_project.sql_models import db_handler, Sight, Descriptor
+from geotagging_project.algorithm_for_choosing import convert_str_sight, get_all_descr_from_sight, score_clustering, sum_descr
+from sklearn.cluster import OPTICS
 
 number_of_classes = 50
 
@@ -51,30 +52,75 @@ def avg_val_of_vec(vec1, vec2):
     return vec3
 
 
+def get_unic_sigths_id(limits=-1):
+    if limits != -1:
+        sights_req = Sight.select(Sight.id).limit(limits)
+    else:
+        sights_req = Sight.select(Sight.id)
+    sights = list()
+    for row in sights_req:
+        sights.append(convert_str_sight(row.id))
+    return sights
+
+
+def get_data(descrs_path, limit=-1):
+    descrs = list()
+    with open(descrs_path, "r") as f_obj:
+        reader = csv.reader(f_obj)
+        i = 0
+        for row in tqdm(reader):
+            descrs.append(list(map(lambda x: float(x), row)))
+            if i == limit:
+                break
+            i += 1
+    return descrs
+
+
+def get_unic_labels(labels):
+    unic_labels = list()
+    for val in labels:
+        if not val in unic_labels:
+            unic_labels.append(val)
+    unic_labels.sort()
+    unic_labels.pop(0)
+    return unic_labels
+
+
+def get_all_descr_from_label(data, labels, label):
+    descrs = list()
+    for i, val in enumerate(data):
+        if labels[i] == label:
+            descrs.append(val)
+    return descrs
+
+
+def get_avg_descr_for_all_clust(data, labels):
+    avg_descrs = dict()
+    for label in tqdm(get_unic_labels(labels)):
+        descrs = get_all_descr_from_label(data, labels, label)
+        n = len(descrs[0])
+        avg_descr = [0] * n
+        for descr in descrs:
+            avg_descr = sum_descr(avg_descr, descr)
+        avg_descr = list(map(lambda x: x * (n ** -1), avg_descr))
+        avg_descrs[str(label)] = avg_descr
+    return avg_descrs
+
+
+def descrs_cluster(data):
+    clust = OPTICS(metric='manhattan', n_jobs=-1, min_cluster_size=200)
+    return clust.fit_predict(data)
+
+
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('--out', type=str, dest='fout')
-    parser.add_argument('--in', type=str, dest='fin')
-
+    parser.add_argument('--in', type=str, dest='descrs_path')
+    parser.add_argument('--out', type=str, dest='json_path')
     args = parser.parse_args()
 
-    data = np.array(get_base_of_descrs_from_csv(args.fin, limit=100))
+    data = get_data(args.descrs_path)
+    labels = descrs_cluster(data)
+    print(score_clustering(data, labels, np.average))
+    with open(args.json_path, "w") as write_file:
+        json.dump(get_avg_descr_for_all_clust(data, labels), write_file)
 
-    D = pairwise_distances(data, metric='manhattan')
-
-    M, C = kMedoids(D, number_of_classes)
-
-    # print('')
-    # print('clustering result:')
-    avg_desc_data = []
-    for label in tqdm(C):
-        avg_desc = data[C[label][0]]
-        for point_idx in C[label]:
-            # print('Label [{0}]:\t\t{1}'.format(label, data[point_idx]))
-            avg_desc = avg_val_of_vec(avg_desc, data[point_idx])
-        avg_desc_data.append(avg_desc)
-
-    with open(args.fout, "w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerows(avg_desc_data)

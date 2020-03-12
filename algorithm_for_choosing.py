@@ -46,15 +46,15 @@ def get_sq_of_euclid_dist(descr1, descr2):
 
 def split_by_labels(data, labels):
 	count = int(np.max(labels))
-	result = [[] for i in range(count+1)]
+	result = [[] for i in range(count + 1)]
 	for i, x in enumerate(data):
 		result[int(labels[i])].append(x)
 	return result
 
 
 def unite_by_labels(data):
-	labels = []
-	result = []
+	labels = list()
+	result = list()
 	for i, cluster in enumerate(data):
 		for x in cluster:
 			labels.append(i)
@@ -63,10 +63,10 @@ def unite_by_labels(data):
 	return result, labels
 
 
-def score_clustering(x, labels, proccess_Din = np.max):
+def score_clustering(x, labels, proccess_Din=np.max):
 	clusters = split_by_labels(x, labels)
-	Din = []
-	avgs = []
+	Din = list()
+	avgs = list()
 	for cluster in clusters:
 		avgs.append(np.average(cluster))
 		Din.append(np.var(cluster))
@@ -105,7 +105,7 @@ def get_nearest_descr_from_all(limit, cur_descr, dist_metric):
 
 def get_unic_sigth_id(limits):
 	sights_req = Sight.select(Sight.id).limit(limits)
-	sights = []
+	sights = list()
 	for row in sights_req:
 		sights.append(convert_str_sight(row.sight_id))
 	return sights
@@ -113,30 +113,50 @@ def get_unic_sigth_id(limits):
 
 def get_all_descr_from_sight(sight_id):
 	descrs_req = Descriptor.select().where(Descriptor.sight_id == sight_id)
-	descrs = []
-	imgs_id = []
+	descrs = list()
+	imgs_id = list()
 	for row in descrs_req:
 		descrs.append(convert_str_desc(row.descriptor))
 		imgs_id.append(int(row.image_id))
 	return (descrs, imgs_id)
 
 
+def sum_descr(descr1, descr2):
+	n = len(descr1)
+	s_descr = [0] * n
+	for i in range(n):
+		s_descr[i] = descr1[i] + descr2[i]
+	return s_descr
+
+
 def get_similar_pos(data, metadata):
 	sim_descrs = data[0]
 	dist = data[1]
 	imgs_id = data[2]
-	dist_mn = min(dist)
-	coeffs = []
+	coeffs = list()
 	for i in range(len(dist)):
 		if dist[i] == 0:
-			coeffs.append(1.0)
+			avg_vec = sim_descrs[i]
+			tdist = get_manhattan_dist(avg_vec, sim_descrs[0])
+			img_id = imgs_id[0]
+			for i in range(1, len(sim_descrs)):
+				if get_manhattan_dist(sim_descrs[i], avg_vec) < tdist:
+					tdist = get_manhattan_dist(sim_descrs[i], avg_vec)
+					img_id = imgs_id[i]
+			with open(metadata, "r") as read_file:
+				mdata = json.load(read_file)
+			for i in range(len(mdata)):
+				if int(mdata[i]['id']) == img_id:
+					return mdata[i]['loc']
 		else:
-			coeffs.append(dist_mn / dist[i])
-	avg_vec = sim_descrs[0]
-	for i in range(1, len(sim_descrs)):
-		avg_vec = avg_val_of_vec(list(map(lambda x: x * coeffs[i - 1], avg_vec)),
-								 list(map(lambda x: x * coeffs[i], sim_descrs[i])))
+			coeffs.append(1 / dist[i])
+	sum_coeff = sum(coeffs)
+	avg_vec = [0] * len(sim_descrs[0])
+	for i in range(len(sim_descrs)):
+		avg_vec = sum_descr(avg_vec, list(map(lambda x: x * coeffs[i], sim_descrs[i])))
+	avg_vec = list(map(lambda x: x * (sum_coeff ** -1), avg_vec))
 	tdist = get_manhattan_dist(avg_vec, sim_descrs[0])
+	img_id = imgs_id[0]
 	for i in range(1, len(sim_descrs)):
 		if get_manhattan_dist(sim_descrs[i], avg_vec) < tdist:
 			tdist = get_manhattan_dist(sim_descrs[i], avg_vec)
@@ -148,20 +168,52 @@ def get_similar_pos(data, metadata):
 			return mdata[i]['loc']
 
 
-# def get_min_dist_pos(data, sight_id):
-# 	sim_descrs = data[0]
-# 	dist = data[0]
-# 	imgs_id = get_all_descr_from_sight(sight_id)[1]
-# 	m_dist = min(dist)
-# 	for i in range(len(sim_descrs)):
-# 		if
+def get_avg_dist_pos(data, metadata):
+	sim_descrs = data[0]
+	dists = data[1]
+	imgs_id = data[2]
+	with open(metadata, "r") as read_file:
+		mdata = json.load(read_file)
+	coordinates = list()
+	for j in range(len(imgs_id)):
+		for i in range(len(mdata)):
+			if int(mdata[i]['id']) == imgs_id[j]:
+				coordinates.append([mdata[i]['loc']['lat'], mdata[i]['loc']['lng']])
+				break
+	if len(coordinates) == 1:
+		return coordinates[0]
+	coeffs = list()
+	for i in range(len(dists)):
+		if dists[i] == 0:
+			avg_pos = dists[i]
+			sim_pos = coordinates[0]
+			sim_img_id = imgs_id[0]
+			for i in range(1, len(coordinates)):
+				if get_manhattan_dist(coordinates[i], avg_pos) < get_manhattan_dist(sim_pos, avg_pos):
+					sim_pos = coordinates[i]
+					sim_img_id = imgs_id[i]
+			return avg_pos
+		else:
+			coeffs.append(1 / dists[i])
+	avg_pos = [0] * len(coordinates[0])
+	for i in range(len(coordinates)):
+		avg_pos = sum_descr(avg_pos, list(map(lambda x: x * coeffs[i], coordinates[i])))
+	coeff_sum = sum(coeffs)
+	avg_pos = list(map(lambda x: (coeff_sum ** -1) * x, avg_pos))
+	sim_pos = coordinates[0]
+	sim_img_id = imgs_id[0]
+	for i in range(1, len(coordinates)):
+		if get_manhattan_dist(coordinates[i], avg_pos) < get_manhattan_dist(sim_pos, avg_pos):
+			sim_pos = coordinates[i]
+			sim_img_id = imgs_id[i]
+	return avg_pos
 
 
-def get_similar_descrs(sigth_id, c_desc, n):
+def get_data_about_similar_descrs(sigth_id, c_desc, n):
 	descrs, b_imgs_id = get_all_descr_from_sight(sigth_id)
-	sim_descr = []
-	dist = []
-	imgs_id = []
+	sim_descr = list()
+	dist = list()
+	imgs_id = list()
 	j = 0
 	for desc in descrs:
 		if len(sim_descr) < n:
@@ -218,6 +270,6 @@ def sight_cluster(x, algo):
 	if algo == 'meanshift':
 		clust = MeanShift(cluster_all=True, n_jobs=-1)
 	if algo == 'kmeans':
-		clust = KMeans(n_clusters=5, n_jobs=-1)
+		clust = KMeans(n_clusters=4, n_jobs=-1)
 
 	return clust.fit_predict(x)
