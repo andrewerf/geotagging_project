@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import json
 import argparse
 
-from geotagging_project.classifier import Classifier, classes_count
-from geotagging_project.mobilenetv1_encoder import Encoder, load_img
-from geotagging_project.algorithm_for_choosing import get_similar_pos, get_data_about_similar_descrs, get_avg_dist_pos
-from geotagging_project.utils import show_image, look_sight
+from classifier import Classifier, OneVsAllCascade
+from mobilenetv1_encoder import Encoder, load_img
+from algorithm_for_choosing import get_similar_pos, get_data_about_similar_descrs, get_avg_dist_pos
+from utils import show_image, look_sight
 
 import numpy as np
 
@@ -24,23 +24,20 @@ def main():
 	with open(args.fclasses, "r") as read_file:
 		classes = json.load(read_file)
 
-	Class_model = Classifier(len(classes), descr.shape, weights_file='stuff/weights2.h5')
+	Class_model = OneVsAllCascade(len(classes), descr.shape, 'stuff/OneVsAll/weights')
 
-	t = Class_model.predict(descr)
-	pred = np.argmax(t)
-	acc = np.max(t)
-	print(t)
-	print(acc)
-
-	sight_id = classes[pred]
-	if sight_id == -1:
+	pred = Class_model.predict(descr, 0.95)
+	if pred == len(classes)+1:
 		print('Not a sight')
 		exit()
 
+	sight_id = classes[pred]
+
+
 	show_image(args.image_path)
 	# print(get_similar_pos(get_data_about_similar_descrs(sight_id, descr, 3), args.metadata))
-	print(get_avg_dist_pos(get_data_about_similar_descrs(sight_id, descr, 3), args.metadata))
-	# look_sight(14514)
+	# print(get_avg_dist_pos(get_data_about_similar_descrs(sight_id, descr, 3), args.metadata))
+	look_sight(sight_id)
 
 
 if __name__ == '__main__':
