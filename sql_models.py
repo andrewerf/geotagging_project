@@ -10,6 +10,7 @@ db_handler = MySQLDatabase(db_name,
 						   user=user,
 						   password = password,
 						   host=db_host)
+#db_handler = SqliteDatabase('/media/andrew/Data/Temp/nn/geotagging_db.sqlite3')
 
 class BaseModel(Model):
 	class Meta:

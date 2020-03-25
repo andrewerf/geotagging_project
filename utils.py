@@ -1,11 +1,27 @@
 import os
 from math import cos, fabs
 import matplotlib.pyplot as plt
+import peewee
 
 from sql_models import Descriptor, Sight
 
 
 imgs_path = '/media/andrew/HDD_Data/Temp/nn/Images/'
+
+
+def get_ktop_areas(k):
+	ret = []
+	ndescrs = peewee.fn.count(Descriptor.id)
+
+	query = Sight.select(Sight.id, ndescrs.alias('count')).join(Descriptor, join_type=peewee.JOIN.LEFT_OUTER).group_by(Sight).order_by(ndescrs.desc()).limit(k)
+
+	i = 0
+	for row in query:
+		if i == k:
+			break
+		ret.append(row.id)
+		i += 1
+	return ret
 
 
 def show_image(img_path):

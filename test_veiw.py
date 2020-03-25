@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 import json
 import argparse
 
-from geotagging_project.classifier import Classifier, classes_count
-from geotagging_project.mobilenetv1_encoder import Encoder, load_img
-from geotagging_project.algorithm_for_choosing import get_similar_pos, get_data_about_similar_descrs, get_avg_dist_pos
-from geotagging_project.utils import show_image, look_sight
+from keras.wrappers.scikit_learn import KerasClassifier
+
+from classifier import sight_classifier, classes_count
+from mobilenetv1_encoder import Encoder, load_img
+from algorithm_for_choosing import get_similar_pos, get_data_about_similar_descrs, get_avg_dist_pos
+from utils import show_image, look_sight
 
 import numpy as np
 
@@ -24,14 +26,9 @@ def main():
 	with open(args.fclasses, "r") as read_file:
 		classes = json.load(read_file)
 
-	Class_model = Classifier(len(classes), descr.shape, weights_file='stuff/weights2.h5')
+	Class_model = KerasClassifier(sight_classifier, cnt_classes=len(classes), input_shape=descr.shape, weights_file='stuff/classifier/weights2.h5')
 
-	t = Class_model.predict(descr)
-	pred = np.argmax(t)
-	acc = np.max(t)
-	print(t)
-	print(acc)
-
+	pred = Class_model.predict(descr)
 	sight_id = classes[pred]
 	if sight_id == -1:
 		print('Not a sight')
