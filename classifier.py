@@ -26,9 +26,6 @@ import argparse
 import numpy as np
 
 
-classes_count = 5
-
-
 def sight_classifier(cnt_classes, input_shape, weights_file=None, activation='relu', units=40, hidden_layers=2,
 					 dropout=0.005, regularizer=regularizers.l2, regularizer_lambda=0.006, optimizer=optimizers.SGD,
 					 lrate=0.004):
@@ -42,7 +39,11 @@ def sight_classifier(cnt_classes, input_shape, weights_file=None, activation='re
 		model.add(layers.Dense(**params))
 		model.add(layers.Dropout(dropout))
 
-	model.add(layers.Dense(units=cnt_classes, activation='softmax'))
+	if cnt_classes == 2:
+		model.add(layers.Dense(units=1, activation='sigmoid'))
+	else:
+		model.add(layers.Dense(units=cnt_classes, activation='softmax'))
+
 	if weights_file:
 		model.load_weights(weights_file)
 
@@ -129,14 +130,7 @@ def read_sql():
 	return (0, 0)
 
 
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--csv', type=str, dest='fin')
-	parser.add_argument('--history', type=str, dest='hist_file')
-	parser.add_argument('--weights', type=str, dest='weights_file')
-	parser.add_argument('--classes', type=str, dest='classes_file')
-	args = parser.parse_args()
-
+def load_prepare_data(classes_count, binary):
 	sights = {}
 	classes = get_ktop_areas(classes_count)
 	query = Descriptor.select(Descriptor.image_id, Descriptor.sight_id).tuples()
@@ -145,10 +139,16 @@ if __name__ == '__main__':
 			sights[int(row[0])] = classes.index(row[1])
 
 	x, y = read_csv(args.fin, sights, False, len(sights))
-	x_nas, y_nas = read_csv(args.fin, sights, True, len(sights) // len(classes))
 
-	# x, y, classes = areas_cluster(x, y, classes)
-	y_nas = np.full_like(y_nas, np.max(y)+1)
+	if binary:
+		y = np.full_like(y, 0)
+		classes = [1]
+		x_nas, y_nas = read_csv(args.fin, sights, True, len(sights))
+		y_nas = np.full_like(y_nas, 1)
+	else:
+		x_nas, y_nas = read_csv(args.fin, sights, True, len(sights) // len(classes))
+		# x, y, classes = areas_cluster(x, y, classes)
+		y_nas = np.full_like(y_nas, np.max(y)+1)
 
 	x = np.append(x, x_nas, axis=0)
 	y = np.append(y, y_nas, axis=0)
@@ -157,6 +157,23 @@ if __name__ == '__main__':
 	control_indices = np.random.choice(x.shape[0], x.shape[0] // 10)
 	c_x, c_y = x[control_indices], y[control_indices]
 	x, y = np.delete(x, control_indices, 0), np.delete(y, control_indices, 0)
+
+	rng_state = np.random.get_state()
+	np.random.shuffle(x)
+	np.random.set_state(rng_state)
+	np.random.shuffle(y)
+
+	return x, y, c_x, c_y, classes
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--csv', type=str, dest='fin')
+	parser.add_argument('--classes_count', type=int, dest='classes_count')
+	parser.add_argument('--history', type=str, dest='hist_file')
+	parser.add_argument('--weights', type=str, dest='weights_file')
+	parser.add_argument('--classes', type=str, dest='classes_file')
+	args = parser.parse_args()
 
 	par_grid_full = {
 		'activation': ['relu', 'tanh'],
@@ -187,13 +204,10 @@ if __name__ == '__main__':
 		'epochs': [150]
 	}
 
-	rng_state = np.random.get_state()
-	np.random.shuffle(x)
-	np.random.set_state(rng_state)
-	np.random.shuffle(y)
+	x, y, c_x, c_y, classes = load_prepare_data(args.classes_count, False)
 
 	#grid = GridSearchCV(KerasClassifier(classifier_model, cnt_classes=len(classes), input_shape=x.shape[1:], verbose=0), par_grid, n_jobs=4, cv=5, verbose=3)
-	grid = EvolutionaryAlgorithmSearchCV(estimator=KerasClassifier(sight_classifier, cnt_classes=len(classes), input_shape=x.shape[1:], verbose=0), refit=True,
+	grid = EvolutionaryAlgorithmSearchCV(estimator=KerasClassifier(sight_classifier, cnt_classes=2, input_shape=x.shape[1:], verbose=0), refit=True,
 										 params=par_grid_test, scoring="accuracy", cv=2,
 										 verbose=2, population_size=2, gene_mutation_prob=0.08, gene_crossover_prob=0.5,
 										 tournament_size=3, generations_number=1, n_jobs=2)
